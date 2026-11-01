@@ -1,0 +1,61 @@
+from ai.agent import run_agent
+
+from automation.open_apps import open_app
+from automation.browser import search_google
+from automation.youtube import play_youtube
+
+
+def process_command(command):
+    command = command.lower().strip()
+
+    # ----------------------------
+    # OPEN ANY WEBSITE
+    # ----------------------------
+    if command.startswith("open "):
+        name = command.replace("open ", "").strip()
+
+        # Installed applications
+        apps = [
+            "chrome",
+            "vscode",
+            "notepad",
+            "calculator",
+            "paint",
+            "cmd",
+            "powershell",
+            "explorer",
+            "word",
+            "excel",
+            "powerpoint",
+        ]
+
+        if name in apps:
+            open_app(name)
+            return f"Opening {name}."
+
+        # Otherwise open as website
+        search_google(name)
+        return f"Opening {name}."
+
+    # ----------------------------
+    # PLAY SONG / VIDEO
+    # ----------------------------
+    if command.startswith("play "):
+        query = command.replace("play", "").strip()
+
+        play_youtube(query)
+        return f"Playing {query}."
+
+    # ----------------------------
+    # GOOGLE SEARCH
+    # ----------------------------
+    if command.startswith("search "):
+        query = command.replace("search", "").strip()
+
+        search_google(query)
+        return f"Searching {query}."
+
+    # ----------------------------
+    # ASK GEMINI
+    # ----------------------------
+    return run_agent(command)

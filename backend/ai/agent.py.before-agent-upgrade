@@ -1,0 +1,270 @@
+import json
+import re
+
+from ai.reasoning import enrich_command
+from ai.emotion import detect_emotion, emotion_reply
+from ai.conversation import add
+from ai.llm import ask_llm
+from ai.router import execute
+
+
+SYSTEM_PROMPT = """
+You are MARCO AI, an intelligent desktop AI assistant.
+
+Your job is to understand the user's actual intention and choose the
+correct action.
+
+Available actions:
+
+Open an installed application:
+{
+    "action": "open_app",
+    "app_name": "chrome"
+}
+
+Open a website:
+{
+    "action": "open_website",
+    "name": "github"
+}
+
+Search Google:
+{
+    "action": "google_search",
+    "query": "python tutorial"
+}
+
+Play something on YouTube:
+{
+    "action": "play_youtube",
+    "query": "romantic songs"
+}
+
+Remember information:
+{
+    "action": "remember",
+    "key": "name",
+    "value": "Prince"
+}
+
+Recall information:
+{
+    "action": "recall",
+    "key": "name"
+}
+
+Rules:
+
+1. Understand natural language. Do not require exact commands.
+2. If the user wants an action, return ONLY valid JSON.
+3. If the user asks a normal knowledge/conversation question, answer normally.
+4. Never return markdown.
+5. Never use ```json.
+6. Choose the most appropriate action.
+7. Do not use google_search when the user clearly wants an installed
+   application opened.
+8. For music/video requests, use play_youtube.
+9. Keep tool arguments concise and useful.
+"""
+
+
+def extract_json(text):
+    """Safely extract the first JSON object from an LLM response."""
+    if not text:
+        return None
+
+    text = text.strip()
+
+    # Direct JSON
+    try:
+        json.loads(text)
+        return text
+    except Exception:
+        pass
+
+    # JSON embedded in extra text
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+
+    if match:
+        candidate = match.group()
+
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            return None
+
+    return None
+
+
+def _run_tool(action_data):
+    """Execute a selected Marco tool safely."""
+    try:
+        result = execute(action_data)
+
+        if result is None:
+            return "Action completed."
+
+        if isinstance(result, bool):
+            return "Action completed successfully." if result else "Action failed."
+
+        return str(result)
+
+    except Exception as error:
+        print("❌ Tool execution error:", error)
+        return None
+
+
+def run_agent(user_message):
+    """
+    Main Marco agent loop.
+
+    Flow:
+        user
+          ↓
+        reasoning
+          ↓
+        LLM
+          ↓
+        tool selection
+          ↓
+        execution
+          ↓
+        result
+    """
+
+    if not user_message:
+        return "Mujhe command samajh nahi aayi."
+
+    # Understand/enrich the natural-language command.
+    original_message = user_message
+    user_message = enrich_command(user_message)
+
+    emotion = detect_emotion(user_message)
+
+    print("\n========== MARCO AGENT ==========")
+    print("User:", original_message)
+    print("Reasoning:", user_message)
+    print("Emotion:", emotion)
+    print("=================================\n")
+
+    emotion_text = emotion_reply(emotion)
+
+    add("User", user_message)
+
+    prompt = f"""
+{SYSTEM_PROMPT}
+
+Detected Emotion:
+{emotion}
+
+User Request:
+{user_message}
+
+Decide whether a tool is required.
+
+If a tool is required:
+return ONLY the JSON action.
+
+If no tool is required:
+answer the user naturally.
+"""
+
+    response = ask_llm(prompt)
+
+    print("\n========== MARCO LLM ==========")
+    print(response)
+    print("===============================\n")
+
+    json_data = extract_json(response)
+
+    # Normal conversational answer.
+    if not json_data:
+        add("Marco", response)
+        return response
+
+    # Tool request.
+    try:
+        action_data = json.loads(json_data)
+
+        if not isinstance(action_data, dict):
+            add("Marco", response)
+            return response
+
+        action = action_data.get("action")
+
+        if not action:
+            add("Marco", response)
+            return response
+
+        print("🎯 Selected Action:", action)
+        print("🛠 Tool Data:", action_data)
+
+        result = _run_tool(action_data)
+
+        # Tool failed.
+        if result is None or result.lower() in {
+            "action failed.",
+            "false",
+            "failed",
+        }:
+            failure_prompt = f"""
+You are MARCO AI.
+
+The requested action failed.
+
+User request:
+{user_message}
+
+Attempted action:
+{json.dumps(action_data)}
+
+Do NOT pretend that the action succeeded.
+
+Choose another available action if a reasonable alternative exists.
+Otherwise tell the user honestly that the action could not be completed.
+
+If another tool is required, return ONLY valid JSON.
+Otherwise give a short natural response.
+"""
+
+            retry_response = ask_llm(failure_prompt)
+
+            retry_json = extract_json(retry_response)
+
+            if retry_json:
+                try:
+                    retry_action = json.loads(retry_json)
+
+                    print("🔄 Retry Action:", retry_action)
+
+                    retry_result = _run_tool(retry_action)
+
+                    if retry_result is not None:
+                        final_response = retry_result
+                        add("Marco", final_response)
+                        return final_response
+
+                except Exception as error:
+                    print("❌ Retry error:", error)
+
+            final_response = "Main ye action complete nahi kar saka."
+            add("Marco", final_response)
+            return final_response
+
+        # Successful tool execution.
+        final_response = result
+
+        add("Marco", final_response)
+
+        print("✅ Tool Result:", final_response)
+
+        return final_response
+
+    except json.JSONDecodeError:
+        add("Marco", response)
+        return response
+
+    except Exception as error:
+        print("❌ Agent error:", error)
+        return response

@@ -1,0 +1,156 @@
+import os
+import shutil
+import subprocess
+import webbrowser
+import time
+
+import win32con
+import win32gui
+
+
+def bring_chrome_to_front():
+    def callback(hwnd, windows):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if "Chrome" in title:
+                windows.append(hwnd)
+
+    windows = []
+    win32gui.EnumWindows(callback, windows)
+
+    if windows:
+        hwnd = windows[0]
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except:
+            pass
+
+        return True
+
+    return False
+
+
+def open_chrome():
+    chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+
+    if bring_chrome_to_front():
+        return True
+
+    for path in chrome_paths:
+        if os.path.exists(path):
+            subprocess.Popen([path, "--new-window"])
+            time.sleep(2)
+            bring_chrome_to_front()
+            return True
+
+    print("❌ Chrome not found.")
+    return False
+
+
+def open_youtube():
+    open_chrome()
+    webbrowser.open("https://www.youtube.com")
+    time.sleep(2)
+    bring_chrome_to_front()
+    return True
+
+
+def open_notepad():
+    subprocess.Popen("notepad")
+    return True
+
+
+def open_calculator():
+    subprocess.Popen("calc")
+    return True
+
+
+def open_vscode():
+    paths = [
+        r"C:\Users\Tcs\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+    ]
+
+    for path in paths:
+        if os.path.exists(path):
+            subprocess.Popen([path])
+            return True
+
+    print("❌ VS Code not found.")
+    return False
+
+
+# =====================================================
+# Generic App Launcher
+# =====================================================
+
+APP_ALIASES = {
+    "chrome": [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ],
+
+    "vscode": [
+        r"C:\Users\Tcs\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+    ],
+
+    "notepad": ["notepad"],
+    "calculator": ["calc"],
+    "calc": ["calc"],
+    "paint": ["mspaint"],
+    "cmd": ["cmd"],
+    "powershell": ["powershell"],
+    "terminal": ["wt"],
+    "explorer": ["explorer"],
+
+    "word": ["winword"],
+    "excel": ["excel"],
+    "powerpoint": ["powerpnt"],
+
+    "spotify": ["spotify"],
+    "telegram": ["telegram"],
+    "discord": ["discord"],
+    "steam": ["steam"],
+
+    "whatsapp": ["shell:AppsFolder\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App"],
+}
+
+
+def open_app(app_name):
+    app_name = app_name.lower().strip()
+
+    if app_name == "youtube":
+        return open_youtube()
+
+    if app_name == "chrome":
+        return open_chrome()
+
+    candidates = APP_ALIASES.get(app_name, [app_name])
+
+    for candidate in candidates:
+
+        # Full executable path
+        if os.path.exists(candidate):
+            subprocess.Popen([candidate])
+            return True
+
+        # Program available in PATH
+        if shutil.which(candidate):
+            subprocess.Popen(candidate)
+            return True
+
+        # Windows command
+        try:
+            subprocess.Popen(candidate)
+            return True
+        except:
+            pass
+
+    print(f"❌ Could not open {app_name}")
+    return False
